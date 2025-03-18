@@ -10,6 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "@dotenvx/dotenvx": "^0.26.0",
+    "@octokit/auth-app": "^7.1.5",
     "@octokit/auth-token": "^5.0.1",
     "@octokit/rest": "^20.0.2",
     "gray-matter": "^4.0.3",

@@ -1,4 +1,5 @@
 import { Octokit } from "@octokit/rest";
+import { createTokenAuth } from "@octokit/auth-token";
 import fs from "fs/promises";
 import matter from "gray-matter";
 import { parse } from 'yaml';
@@ -8,12 +9,59 @@ import 'dotenv/config';
 const githubToken = process.env.GITHUB_TOKEN;
 
 const octokit = new Octokit({
-  auth: githubToken, // Replace with your GitHub token
+  auth: githubToken,
 });
+
+// Define default label colors (optional)
+const defaultLabelColors = {
+  "Front-end": "1D76DB", // Blue
+  "Scripting": "D93F0B",       // Red
+  "Analysis": "0E8A16", // Green
+  "Data Science": "5319E7", // Purple
+};
 
 const variables = {
   gcp_project: 'musa5090s25_team1',
 };
+
+async function ensureLabelExists(labelName, labelColor) {
+  try {
+    // Check if the label already exists
+    await octokit.request("GET /repos/{owner}/{repo}/labels/{name}", {
+      owner: 'junyi2022', // Replace with your GitHub username or organization
+      repo: 'GitHubAPI-test', // Replace with your repository name
+      name: labelName,
+    });
+
+    // If the label exists, update its color
+    await octokit.request("PATCH /repos/{owner}/{repo}/labels/{name}", {
+      owner: 'junyi2022', // Replace with your GitHub username or organization
+      repo: 'GitHubAPI-test', // Replace with your repository name
+      name: labelName,
+      color: labelColor || "FFFFFF", // Update the color
+      headers: {
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+    console.log(`Updated label "${labelName}" with color #${labelColor || "FFFFFF"}.`);
+  } catch (error) {
+    if (error.status === 404) {
+      // If the label doesn't exist, create it
+      await octokit.request("POST /repos/{owner}/{repo}/labels", {
+        owner: 'junyi2022', // Replace with your GitHub username or organization
+        repo: 'GitHubAPI-test', // Replace with your repository name
+        name: labelName,
+        color: labelColor || "FFFFFF", // Default to white if no color is provided
+        headers: {
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      });
+      console.log(`Created label "${labelName}" with color #${labelColor || "FFFFFF"}.`);
+    } else {
+      throw error;
+    }
+  }
+}
 
 async function main() {
   // Read the file in issues/to-upload/issue-slugs.yml
@@ -21,7 +69,7 @@ async function main() {
   const issueSlugs = parse(issues).issues;
 
   // For each issue, read the file in issues/to-upload/{issueSlug}.md; parse the front matter.
-  for (const issueSlug of issueSlugs) {
+  for (const [issueIndex, issueSlug] of issueSlugs.entries()) {
     const filePath = `to-upload/${issueSlug}.md`;
     const fileContent = await fs.readFile(filePath, 'utf-8');
     const { data: frontMatter, content: body } = matter(fileContent);
@@ -29,12 +77,21 @@ async function main() {
     // Extract relevant fields from the front matter
     const { title, labels } = frontMatter;
 
+    // Ensure all labels exist (create them if they don't)
+    if (labels && Array.isArray(labels)) {
+      for (const labelName of labels) {
+        // Use a default color if defined, otherwise use a fallback color
+        const labelColor = defaultLabelColors[labelName] || "FFFFFF"; // Fallback to white
+        await ensureLabelExists(labelName, labelColor);
+      }
+    }
+
     try {
       // Try to update the issue if it already exists
       await octokit.request('PATCH /repos/{owner}/{repo}/issues/{issue_number}', {
         owner: 'junyi2022', // Replace with your GitHub username or organization
         repo: 'GitHubAPI-test', // Replace with your repository name
-        issue_number: issueSlug, // Assuming the issue slug is the issue number
+        issue_number: issueIndex + 1, // Assuming the issue slug is the issue number
         title,
         body,
         labels,
@@ -47,8 +104,8 @@ async function main() {
       if (error.status === 404) {
         // If the issue doesn't exist, create a new one
         await octokit.request('POST /repos/{owner}/{repo}/issues', {
-          owner: 'OWNER', // Replace with your GitHub username or organization
-          repo: 'REPO', // Replace with your repository name
+          owner: 'junyi2022', // Replace with your GitHub username or organization
+          repo: 'GitHubAPI-test', // Replace with your repository name
           title,
           body,
           labels,
